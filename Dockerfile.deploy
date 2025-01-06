@@ -1,0 +1,39 @@
+# Use the official Node.js v10 image as the base image
+FROM node:10-alpine
+
+# Install dependencies including Docker
+RUN apk add --no-cache git python3 make g++ \
+    && apk add --no-cache \
+    docker \
+    openrc
+
+# Create and set the working directory in the container
+RUN mkdir -p /home/dydx/app
+WORKDIR /home/dydx/app
+
+# Copy the package.json and package-lock.json files
+COPY ./package.json ./package-lock.json ./
+COPY ./.env ./.env
+COPY ./tsconfig.json ./tsconfig.json
+COPY ./src ./src
+
+# Install npm version 6.14
+RUN npm install -g npm@6.14
+RUN npm install mkdirp@^0.5.1
+
+# Install project dependencies
+RUN npm ci --loglevel warn
+
+# Copy additional project files
+COPY ./truffle.js ./truffle.js
+COPY ./contracts ./contracts
+
+# Copy more project files
+COPY ./migrations ./migrations
+COPY ./scripts ./scripts
+
+# Create directory and run additional setup script
+RUN mkdir /home/.ganache
+
+# Start a shell when the container runs 
+CMD ["tail", "-f", "/dev/null"]

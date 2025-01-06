@@ -118,6 +118,21 @@ module.exports = {
       confirmations: 0,
       disableConfirmationListener: true,
     },
+    arbitrum_sepolia: {
+      network_id: '421614',
+      provider: () => {
+        return new HDWalletProvider({
+          privateKeys: [process.env.DEPLOYER_PRIVATE_KEY],
+          providerOrUrl: process.env.ARBITRUM_SEPOLIA_RPC_URL,
+        });
+      },
+      gasPrice: 1000000000, // 1 gwei
+      gas: 25000000,
+      timeoutBlocks: 5000,
+      networkCheckTimeout: 120000,
+      confirmations: 0,
+      disableConfirmationListener: true,
+    },
     base: {
       network_id: '8453',
       provider: () => {

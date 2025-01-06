@@ -1,5 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
-import fs from 'fs';
+import * as fs from 'fs';
 import { promisify } from 'es6-promisify';
 import mkdirp from 'mkdirp';
 import contracts from './Artifacts';

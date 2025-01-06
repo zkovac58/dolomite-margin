@@ -53,6 +53,7 @@
     "deploy_partially_delayed_multisig": "NODE_ENV=production ts-node scripts/DeployPartiallyDelayedMultisig.ts",
     "deploy_arbitrum_goerli": "NETWORK=arbitrum_goerli npm run deploy",
     "deploy_arbitrum_one": "NETWORK=arbitrum_one npm run deploy",
+    "deploy_arbitrum_sepolia": "NETWORK=arbitrum_sepolia npm run deploy",
     "deploy_base": "NETWORK=base npm run deploy",
     "deploy_base_sepolia": "NETWORK=base_sepolia npm run deploy",
     "deploy_berachain_bartio": "NETWORK=berachain_bartio npm run deploy",

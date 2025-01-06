@@ -223,7 +223,8 @@ function getDelayedMultisigAddress(network) {
     isSuperSeed(network) ||
     isXLayerNetwork(network)
   ) {
-    return '0x52d7BcB650c591f6E8da90f797A1d0Bfd8fD05F9';
+    return process.env.DELAYED_MULTISIG_ADDRESS;
+    //return '0x52d7BcB650c591f6E8da90f797A1d0Bfd8fD05F9';
   }
   throw new Error('Cannot find DelayedMultisig for network: ' + network);
 }
@@ -269,12 +270,28 @@ const shouldOverwrite = (contract, network) => {
 
 const getNoOverwriteParams = () => ({ overwrite: false });
 
+const removeEntriesWithKey = (data, keyToRemove) => {
+  Object.keys(data).forEach(contract => {
+    if (data[contract].hasOwnProperty(keyToRemove)) {
+      delete data[contract][keyToRemove];
+    }
+  });
+  return data;
+}
+
+const removeBerachainBartioDeploymedAddresses = () => {
+  let json = JSON.parse(readFileSync('migrations/deployed.json').toString());
+  json = removeEntriesWithKey(json, "80084");
+  writeFileSync('migrations/deployed.json', JSON.stringify(sortFileAndReturn(json), null, 2));
+}
+
 async function sleep(millis) {
   return new Promise(resolve => setTimeout(resolve, millis));
 }
 
 async function deployContractIfNecessary(artifacts, deployer, network, artifact, parameters) {
   const contractName = artifact.toJSON().contractName;
+  console.log("Deploying", contractName);
 
   if (shouldOverwrite(artifact, network)) {
     if (!isDevNetwork(network)) {
@@ -285,6 +302,7 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
         json[contractName][getChainId(network)].address &&
         json[contractName][getChainId(network)].address !== '0x0000000000000000000000000000000000000000'
       ) {
+        console.log("Already deployed. Returning existing address...");
         return await artifact.at(json[contractName][getChainId(network)].address);
       }
 
@@ -299,17 +317,26 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
           arguments: parameters ? parameters : [],
         })
         .encodeABI();
+      console.log("Prepared the code", code);
       const salt = Web3.utils.keccak256(web3.eth.abi.encodeParameters(['string'], [contractName]));
+      console.log("Salt is ready", salt);  
 
       const CREATE3Factory = await artifacts
         .require('ICREATE3Factory')
         .at('0xa8F7e7A361De6A2172fcb2accE68bd21597599F7');
 
+      console.log("Got CREATE3Factory instance");
+
       let transactionHash = '0x0000000000000000000000000000000000000000000000000000000000000000';
-      const deployerAddress = web3.eth.accounts.privateKeyToAccount(process.env.DEPLOYER_PRIVATE_KEY);
+      const privateKey = "0x" + process.env.DEPLOYER_PRIVATE_KEY;      
+      const deployerAddress = web3.eth.accounts.privateKeyToAccount(privateKey);
+      console.log("Deployer address", deployerAddress.address);
       const contractAddress = await CREATE3Factory.getDeployed(deployerAddress.address, salt);
+      console.log("Predicted contract address", contractAddress);
       if ((await web3.eth.getCode(contractAddress)) === '0x') {
+        console.log("Calling CREATE3Factory.deploy...");
         const result = await CREATE3Factory.deploy(salt, code);
+        console.log("Got result", result);
         await sleep(2000);
         if (!json[contractName]) {
           json[contractName] = {};
@@ -408,4 +435,5 @@ module.exports = {
   setAutoTraderSpecialIfNecessary,
   deployContractIfNecessary,
   getContract,
+  removeBerachainBartioDeploymedAddresses
 };

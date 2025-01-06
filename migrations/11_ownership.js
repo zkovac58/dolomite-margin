@@ -31,9 +31,10 @@ const DolomiteMargin = artifacts.require('DolomiteMargin');
 const migration = async (deployer, network) => {
   if (!isDevNetwork(network) && !isBeraCartio(network)) {
     const delayedMultisig = getDelayedMultisigAddress(network);
-
-    const dolomiteMargin = await getContract(network, DolomiteMargin);
-    await dolomiteMargin.transferOwnership(delayedMultisig);
+    if (delayedMultisig) {
+      const dolomiteMargin = await getContract(network, DolomiteMargin);
+      await dolomiteMargin.transferOwnership(delayedMultisig);
+    }
   }
 };
 

@@ -25,6 +25,8 @@ const { deployContractIfNecessary, getChainId } = require('./helpers');
 const Migrations = artifacts.require('Migrations');
 
 const migration = async (deployer, network) => {
+  removeBerachainBartioDeploymedAddresses();
+
   console.log('\tDeploying to chain ID', getChainId(network))
   await deployContractIfNecessary(artifacts, deployer, network, Migrations);
 };
