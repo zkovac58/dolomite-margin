@@ -50,6 +50,7 @@
     "fix_deployment_file": "ts-node ./scripts/FixDeploymentFile.ts",
     "deploy": "npm run fix_deployment_file && NODE_ENV=production node --max-old-space-size=32384 node_modules/.bin/truffle migrate --network $NETWORK && npm run save_deployed_addresses",
     "deploy_single": "NODE_ENV=production ts-node scripts/DeployContract.ts",
+    "deploy_dev": "NETWORK=dev npm run deploy",
     "deploy_partially_delayed_multisig": "NODE_ENV=production ts-node scripts/DeployPartiallyDelayedMultisig.ts",
     "deploy_arbitrum_goerli": "NETWORK=arbitrum_goerli npm run deploy",
     "deploy_arbitrum_one": "NETWORK=arbitrum_one npm run deploy",

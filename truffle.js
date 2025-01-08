@@ -78,7 +78,7 @@ module.exports = {
       port: 8545,
       network_id: '*',
       gasPrice: 1000000000, // 1 gwei
-      gas: 7900000,
+      gas: 0,
     },
     coverage: {
       host: '127.0.0.1',
@@ -127,11 +127,13 @@ module.exports = {
         });
       },
       gasPrice: 1000000000, // 1 gwei
-      gas: 25000000,
+      gas: 5000000000,           
       timeoutBlocks: 5000,
-      networkCheckTimeout: 120000,
+      networkCheckTimeout: 10000000,//120000,
+      deploymentPollingInterval: pollingInterval,
       confirmations: 0,
       disableConfirmationListener: true,
+      create3FactoryAddress: "0x7eDf881e0ab90dC4667666cd6f06183F90Ac140b",
     },
     base: {
       network_id: '8453',

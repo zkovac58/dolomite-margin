@@ -1,5 +1,6 @@
 const { readFileSync, writeFileSync } = require('fs');
 const Web3 = require('web3');
+const config = require('../truffle.js');
 const { coefficientsToString, decimalToString } = require('../dist/src/lib/Helpers');
 
 // ============ Network Helper Functions ============
@@ -34,7 +35,7 @@ function isCoverageTestNetwork(network) {
 // ================== Filtered Networks ==================
 
 function isArbitrumNetwork(network) {
-  return isArbitrumOne(network);
+  return isArbitrumOne(network) || isArbitrumSepolia(network);
 }
 
 function isPolygonZkEvmNetwork(network) {
@@ -62,6 +63,11 @@ function isBaseNetwork(network) {
 function isArbitrumOne(network) {
   verifyNetwork(network);
   return network === 'arbitrum_one';
+}
+
+function isArbitrumSepolia(network) {
+  verifyNetwork(network);
+  return network === 'arbitrum_sepolia';
 }
 
 function isBase(network) {
@@ -116,12 +122,18 @@ function isDocker(network) {
   return network === 'docker';
 }
 
-function getChainId(network) {
+function getChainId(network) {  
+  if (isDevNetwork(network)) {
+    return 1313;
+  }
   if (isEthereumMainnet(network)) {
     return 1;
   }
   if (isArbitrumOne(network)) {
     return 42161;
+  }
+  if (isArbitrumSepolia(network)) {
+    return 421614;
   }
   if (isBase(network)) {
     return 8453;
@@ -205,10 +217,22 @@ function getExpiryRampTime() {
   return '300'; // 5 minutes
 }
 
+async function getFeeData(network) {   
+  return {
+    maxFeePerGas: 5000000000000,
+    maxPriorityFeePerGas: 500000000,
+  };
+}
+
 function verifyNetwork(network) {
   if (!network) {
     throw new Error('No network provided');
   }
+}
+
+function getCREATE3FactoryAddress(network) {
+  const networkConfig = config.networks[network];
+  return networkConfig.create3FactoryAddress || "0xa8F7e7A361De6A2172fcb2accE68bd21597599F7";
 }
 
 function getDelayedMultisigAddress(network) {
@@ -279,19 +303,53 @@ const removeEntriesWithKey = (data, keyToRemove) => {
   return data;
 }
 
-const removeBerachainBartioDeploymedAddresses = () => {
+const removeDeployedAddresses = (networkIds) => {
   let json = JSON.parse(readFileSync('migrations/deployed.json').toString());
-  json = removeEntriesWithKey(json, "80084");
+  
+  networkIds.forEach(networkId => {
+    json = removeEntriesWithKey(json, networkId);
+  });
+
   writeFileSync('migrations/deployed.json', JSON.stringify(sortFileAndReturn(json), null, 2));
 }
+
 
 async function sleep(millis) {
   return new Promise(resolve => setTimeout(resolve, millis));
 }
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000;
+
 async function deployContractIfNecessary(artifacts, deployer, network, artifact, parameters) {
+  let attempt = 0;
+
+  while (attempt < MAX_RETRIES) {
+    try {
+      await _deployContractIfNecessary(artifacts, deployer, network, artifact, parameters);
+      console.log('Deployment successful on attempt:', attempt + 1);
+      return;
+    } catch (error) {
+      attempt++;
+      console.error(`Deployment attempt ${attempt} failed:`, error);
+
+      if (attempt < MAX_RETRIES) {
+        console.log(`Retrying deployment... (${attempt}/${MAX_RETRIES})`);
+        await sleep(RETRY_DELAY);
+      } else {
+        console.error('Deployment failed after maximum retries.');
+        throw error;
+      }
+    }
+  }
+}
+
+async function _deployContractIfNecessary(artifacts, deployer, network, artifact, parameters) {
+  
   const contractName = artifact.toJSON().contractName;
   console.log("Deploying", contractName);
+
+  await sleep(2000);
 
   if (shouldOverwrite(artifact, network)) {
     if (!isDevNetwork(network)) {
@@ -304,7 +362,9 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
       ) {
         console.log("Already deployed. Returning existing address...");
         return await artifact.at(json[contractName][getChainId(network)].address);
-      }
+      }      
+
+      await sleep(1000);
 
       const web3 = new Web3(deployer.provider);
       let bytecode = artifact.bytecode;
@@ -317,15 +377,18 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
           arguments: parameters ? parameters : [],
         })
         .encodeABI();
-      console.log("Prepared the code", code);
-      const salt = Web3.utils.keccak256(web3.eth.abi.encodeParameters(['string'], [contractName]));
-      console.log("Salt is ready", salt);  
+
+      const salt = Web3.utils.keccak256(web3.eth.abi.encodeParameters(['string'], [contractName]));      
+
+      const create3FactoryAddress = getCREATE3FactoryAddress(network);
 
       const CREATE3Factory = await artifacts
         .require('ICREATE3Factory')
-        .at('0xa8F7e7A361De6A2172fcb2accE68bd21597599F7');
+        .at(create3FactoryAddress);        
 
-      console.log("Got CREATE3Factory instance");
+      console.log("Got CREATE3Factory instance at", create3FactoryAddress);
+
+      await sleep(1000);
 
       let transactionHash = '0x0000000000000000000000000000000000000000000000000000000000000000';
       const privateKey = "0x" + process.env.DEPLOYER_PRIVATE_KEY;      
@@ -334,14 +397,63 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
       const contractAddress = await CREATE3Factory.getDeployed(deployerAddress.address, salt);
       console.log("Predicted contract address", contractAddress);
       if ((await web3.eth.getCode(contractAddress)) === '0x') {
+
         console.log("Calling CREATE3Factory.deploy...");
-        const result = await CREATE3Factory.deploy(salt, code);
-        console.log("Got result", result);
+
+        console.log("Sleeping... (because of the RPC limit)");
+        await sleep(10000);                           
+
+        const deployData = CREATE3Factory.contract.methods.deploy(salt, code).encodeABI();
+        const gasEstimate = await web3.eth.estimateGas({
+          from: deployerAddress.address,
+          to: CREATE3Factory.address,
+          data: deployData
+        });
+
+        console.log("Gas estimate for deploy:", gasEstimate);
+
+        const feeData = await getFeeData(network);        
+        const tx = {
+          from: deployerAddress.address,
+          to: CREATE3Factory.address,
+          data: deployData,
+          gas: Math.max(gasEstimate, config.networks[network].gas),
+          maxFeePerGas: config.networks[network].maxFeePerGas || feeData.maxFeePerGas, 
+          maxPriorityFeePerGas: config.networks[network].maxPriorityFeePerGas || feeData.maxPriorityFeePerGas,
+          nonce: await web3.eth.getTransactionCount(deployerAddress.address)
+        };
+
+        console.log("Signing transaction");
+
         await sleep(2000);
-        if (!json[contractName]) {
-          json[contractName] = {};
+
+        const signedTx = await web3.eth.accounts.signTransaction(tx, privateKey);                  
+        const transactionPromise = web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+                
+        let receipt;
+        transactionPromise.once('transactionHash', async (hash) => {
+          console.log('Transaction hash:', hash);
+      
+          try {
+            receipt = await pollForReceipt(web3, hash, 60000);
+            console.log('Got receipt', receipt);                        
+            transactionHash = receipt.transactionHash;
+            
+          } catch (error) {
+            console.error('Error while polling for receipt:', error);
+          }
+        });
+      
+        transactionPromise.once('error', (error) => {
+          console.error('Deployment failed:', error);
+        });        
+
+        if (!receipt) {
+          throw "Receipt not received!";
         }
-        transactionHash = result.receipt.transactionHash;
+
+        await sleep(2000);
+
       }
 
       if (!json[contractName][getChainId(network)] || !json[contractName][getChainId(network)].address) {
@@ -361,8 +473,11 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
         writeFileSync('migrations/deployed.json', JSON.stringify(sortFileAndReturn(json), null, 2));
       }
 
+      await sleep(2000);
+
       return await artifact.at(contractAddress);
     } else {
+      console.log("Deploying to dev/local/docker network...");
       await deployer.deploy(artifact, ...(parameters ? parameters : []));
       return await artifact.deployed();
     }
@@ -370,6 +485,31 @@ async function deployContractIfNecessary(artifacts, deployer, network, artifact,
     const json = JSON.parse(readFileSync('migrations/deployed.json').toString());
     return artifact.at(json[contractName][getChainId(network)].address);
   }
+}
+
+async function pollForReceipt(web3, txHash, timeout) {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const checkInterval = 1000;
+
+    const checkReceipt = async (web3) => {
+      try {
+        const receipt = await web3.eth.getTransactionReceipt(txHash);
+        if (receipt) {
+          resolve(receipt);
+        } else if (Date.now() - startTime < timeout) {
+          setTimeout(() => { checkReceipt(web3); }, checkInterval);
+        } else {
+          reject(new Error("Transaction receipt not found within the timeout period"));
+        }
+      } catch (error) {
+        console.error("Error while fetching receipt:", error);
+        setTimeout(() => { checkReceipt(web3); }, checkInterval);
+      }
+    };
+
+    checkReceipt(web3);
+  });
 }
 
 function sortFileAndReturn(file) {
@@ -435,5 +575,5 @@ module.exports = {
   setAutoTraderSpecialIfNecessary,
   deployContractIfNecessary,
   getContract,
-  removeBerachainBartioDeploymedAddresses
+  removeDeployedAddresses
 };

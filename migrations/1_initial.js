@@ -20,14 +20,11 @@
  * @typedef {Object} artifacts
  */
 
-const { deployContractIfNecessary, getChainId } = require('./helpers');
+const { deployContractIfNecessary } = require('./helpers');
 
 const Migrations = artifacts.require('Migrations');
 
-const migration = async (deployer, network) => {
-  removeBerachainBartioDeploymedAddresses();
-
-  console.log('\tDeploying to chain ID', getChainId(network))
+const migration = async (deployer, network) => {  
   await deployContractIfNecessary(artifacts, deployer, network, Migrations);
 };
 
